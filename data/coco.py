@@ -22,7 +22,7 @@ class COCODetection(data.Dataset):
         size: int,
         dataset_name: str = "COCO2017",
     ) -> None:
-        self.root = os.path.join("/home/heng/Documents/Datasets/", "COCO/")
+        self.root = os.path.join("/home/jihun/datasets/", "coco/")
         self.size = size
         self.name = dataset_name + str(image_sets) + str(self.size)
         self.ids = list()
