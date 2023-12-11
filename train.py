@@ -25,21 +25,23 @@ from utils import (
     tencent_trick,
     adjust_learning_rate,
 )
+import wandb
 
 cudnn.benchmark = True
 
 ### For Reproducibility ###
-# import random
-# SEED = 0
-# random.seed(SEED)
-# np.random.seed(SEED)
-# torch.manual_seed(SEED)
-# torch.cuda.manual_seed_all(SEED)
-# torch.cuda.empty_cache()
-# cudnn.benchmark = False
-# cudnn.deterministic = True
-# cudnn.enabled = True
-### For Reproducibility ###
+import numpy as np
+import random
+SEED = 0
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.cuda.empty_cache()
+cudnn.benchmark = False
+cudnn.deterministic = True
+cudnn.enabled = True
+## For Reproducibility ###
 
 parser = argparse.ArgumentParser(description="Mutual Guide Training")
 parser.add_argument("--config", type=str)
@@ -62,7 +64,7 @@ def save_model(
             args.backbone,
             args.image_size,
             args.anchor_size,
-            "MG" if args.mutual_guide else "Retina",
+            "combined" if args.mutual_guide else "Retina",
             suffix,
         ),
     )
@@ -77,7 +79,8 @@ def save_model(
 
 
 if __name__ == "__main__":
-    
+    wandb.init(project='detection', name='combined', entity='team_kyumin')
+
     print("Extracting params...")
     with open(args.config, "r") as f:
         configs = yaml.safe_load(f)
@@ -85,6 +88,9 @@ if __name__ == "__main__":
             for key, value in config.items():
                 setattr(args, key, value)
     print(args)
+
+
+
 
     print("Loading dataset...")
     if args.dataset == "COCO":
@@ -193,6 +199,7 @@ if __name__ == "__main__":
                 )
             )
             timer.clear()
+            wandb.log({'loss': loss.item()})
 
     # model saving
     save_model(ema_model.ema, iteration, "Final")
