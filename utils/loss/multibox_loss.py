@@ -53,9 +53,9 @@ class MultiBoxLoss(nn.Module):
                     classif,
                     priors,
                     loc_t,
-                    cls_t,
-                    cls_w,
-                    loc_w,
+                    cls_t,  # conf_t
+                    cls_w,  # overlap_t  
+                    loc_w,  # pred_t
                     idx,
                 )
 
@@ -65,8 +65,8 @@ class MultiBoxLoss(nn.Module):
             priors = priors.unsqueeze(0).expand_as(loc_p)
             mask = pos.unsqueeze(-1).expand_as(loc_p)
 
-            # weights = (loc_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
-            weights = (cls_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            weights = (loc_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            # weights = (cls_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
             weights = weights[mask].view(-1, 4)
             weights = weights / weights.sum()
 
