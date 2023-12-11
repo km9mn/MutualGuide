@@ -64,7 +64,8 @@ def save_model(
             args.backbone,
             args.image_size,
             args.anchor_size,
-            "combined" if args.mutual_guide else "Retina",
+            # "MG" if args.mutual_guide else "Retina",
+            args.mutual_guide,
             suffix,
         ),
     )
@@ -139,7 +140,8 @@ if __name__ == "__main__":
 
     print(
         "Training {}-{}-{} on {} with {} images".format(
-            "MG" if args.mutual_guide else "Retina",
+            # "MG" if args.mutual_guide else "Retina",
+            args.mutual_guide,
             args.neck,
             args.backbone,
             dataset.name,

@@ -10,7 +10,7 @@ training:
   lr: 0.01
   warm_iter: 500
   save_folder: "weights/"
-  mutual_guide: False
+  mutual_guide: baseline
 
 distilling:
   kd: mse

@@ -3,7 +3,7 @@
 
 import torch
 import torch.nn as nn
-from ..box import match, mutual_match, encode, decode
+from ..box import match, mutual_match, encode, decode, combined_match
 from .focal_loss import FocalLoss
 from .gfocal_loss import GFocalLoss
 from .balanced_l1_loss import BalancedL1Loss
@@ -15,7 +15,7 @@ class MultiBoxLoss(nn.Module):
 
     def __init__(
         self,
-        mutual_guide: bool = True,
+        mutual_guide: str,
     ) -> None:
         super(MultiBoxLoss, self).__init__()
 
@@ -34,18 +34,18 @@ class MultiBoxLoss(nn.Module):
         (loc_p, cls_p) = predictions["loc"], predictions["conf"]
         (num, num_priors, num_classes) = cls_p.size()
 
-        if self.mutual_guide:
+        if self.mutual_guide == "MG":
 
             # match priors (default boxes) and ground truth boxes
             loc_t = torch.zeros(num, num_priors, 4).cuda()
             cls_t = torch.zeros(num, num_priors).cuda().long()
             cls_w = torch.zeros(num, num_priors).cuda()
             loc_w = torch.zeros(num, num_priors).cuda()
-            for idx in range(num):
-                truths = targets[idx][:, :-1]
-                labels = targets[idx][:, -1].long()
-                regress = loc_p[idx, :, :]
-                classif = cls_p[idx, :, :]
+            for idx in range(num):                  # batch size: 32
+                truths = targets[idx][:, :-1]       # gt bbox
+                labels = targets[idx][:, -1].long() # gt label
+                regress = loc_p[idx, :, :]          # regressed bbox
+                classif = cls_p[idx, :, :]          # predicted probabilities
                 mutual_match(
                     truths,
                     labels,
@@ -60,11 +60,13 @@ class MultiBoxLoss(nn.Module):
                 )
 
             # Localization Loss
-            pos = loc_w >= 3.0
+            pos = loc_w >= 3.0  # IoU_amplified
+            # pos = cls_w >= 3.0
             priors = priors.unsqueeze(0).expand_as(loc_p)
             mask = pos.unsqueeze(-1).expand_as(loc_p)
 
-            weights = (loc_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            # weights = (loc_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            weights = (cls_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
             weights = weights[mask].view(-1, 4)
             weights = weights / weights.sum()
 
@@ -76,8 +78,69 @@ class MultiBoxLoss(nn.Module):
             ) + self.iou_loss(decode(loc_p, priors), loc_t, weights=weights.sum(-1))
 
             # Classification Loss
-            cls_t = cls_t + 1
-            neg = cls_w <= 1.0
+            cls_t = cls_t + 1   
+            neg = cls_w <= 1.0  # IoU_regressed
+            cls_t[neg] = 0
+            cls_t = (
+                torch.zeros(num * num_priors, num_classes + 1)
+                .cuda()
+                .scatter_(1, cls_t.view(-1, 1), 1)
+            )
+            cls_t = cls_t[:, 1:].view(
+                num, num_priors, num_classes
+            )  # shape: (batch_size, num_priors, num_classes)
+
+            cls_w = (cls_w - 3.0).relu().unsqueeze(-1).expand_as(cls_t)
+            loss_c = self.gfocal_loss(cls_p, cls_t * cls_w)
+
+            return loss_l + loss_c
+        
+        elif self.mutual_guide == "combined":
+
+            # match priors (default boxes) and ground truth boxes
+            loc_t = torch.zeros(num, num_priors, 4).cuda()
+            cls_t = torch.zeros(num, num_priors).cuda().long()
+            cls_w = torch.zeros(num, num_priors).cuda()
+            loc_w = torch.zeros(num, num_priors).cuda()
+            for idx in range(num):                  # batch size: 32
+                truths = targets[idx][:, :-1]       # gt bbox
+                labels = targets[idx][:, -1].long() # gt label
+                regress = loc_p[idx, :, :]          # regressed bbox
+                classif = cls_p[idx, :, :]          # predicted probabilities
+                combined_match(
+                    truths,
+                    labels,
+                    regress,
+                    classif,
+                    priors,
+                    loc_t,
+                    cls_t,
+                    cls_w,
+                    loc_w,
+                    idx,
+                )
+
+            # Localization Loss
+            # pos = loc_w >= 3.0  # IoU_amplified
+            pos = cls_w >= 3.0
+            priors = priors.unsqueeze(0).expand_as(loc_p)
+            mask = pos.unsqueeze(-1).expand_as(loc_p)
+
+            # weights = (loc_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            weights = (cls_w - 3.0).relu().unsqueeze(-1).expand_as(loc_p)
+            weights = weights[mask].view(-1, 4)
+            weights = weights / weights.sum()
+
+            loc_p = loc_p[mask].view(-1, 4)
+            priors = priors[mask].view(-1, 4)
+            loc_t = loc_t[mask].view(-1, 4)
+            loss_l = self.l1_loss(
+                loc_p, encode(loc_t, priors), weights=weights
+            ) + self.iou_loss(decode(loc_p, priors), loc_t, weights=weights.sum(-1))
+
+            # Classification Loss
+            cls_t = cls_t + 1   
+            neg = cls_w <= 1.0  # IoU_regressed
             cls_t[neg] = 0
             cls_t = (
                 torch.zeros(num * num_priors, num_classes + 1)
@@ -96,7 +159,7 @@ class MultiBoxLoss(nn.Module):
         else:
 
             # match priors (default boxes) and ground truth boxes
-            cls_w = torch.zeros(num, num_priors).cuda()
+            cls_w = torch.zeros(num, num_priors).cuda()         # IoU_anchor
             loc_t = torch.zeros(num, num_priors, 4).cuda()
             cls_t = torch.zeros(num, num_priors).cuda().long()
             for idx in range(num):
@@ -111,9 +174,9 @@ class MultiBoxLoss(nn.Module):
             # Localization Loss
             priors = priors.unsqueeze(0).expand_as(loc_p)
             mask = pos.unsqueeze(-1).expand_as(loc_p)
-            loc_p = loc_p[mask].view(-1, 4)
-            loc_t = loc_t[mask].view(-1, 4)
-            priors = priors[mask].view(-1, 4)
+            loc_p = loc_p[mask].view(-1, 4)     # regressed bbox
+            loc_t = loc_t[mask].view(-1, 4)     # gt bbox
+            priors = priors[mask].view(-1, 4)   # anchor box
             loss_l = self.l1_loss(loc_p, encode(loc_t, priors))
 
             # Classification Loss
