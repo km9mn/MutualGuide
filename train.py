@@ -80,7 +80,7 @@ def save_model(
 
 
 if __name__ == "__main__":
-    wandb.init(project='detection', name='combined', entity='team_kyumin')
+
 
     print("Extracting params...")
     with open(args.config, "r") as f:
@@ -89,7 +89,7 @@ if __name__ == "__main__":
             for key, value in config.items():
                 setattr(args, key, value)
     print(args)
-
+    wandb.init(project='detection', name=args.mutual_guide, entity='team_kyumin')
 
 
 
@@ -149,9 +149,13 @@ if __name__ == "__main__":
         )
     )
     timer = Timer()
+    epoch = -1
     for iteration in range(start_iter, end_iter):
+        
         if iteration % epoch_size == 0:
-
+            epoch += 1
+            print('epoch:', epoch)
+            lam = epoch / args.max_epoch
             # save checkpoint
             save_model(ema_model.ema, iteration, "CKPT")
 
@@ -179,7 +183,7 @@ if __name__ == "__main__":
 
         with torch.cuda.amp.autocast():
             out = model(images)
-            loss = criterion(out, priors, targets)
+            loss = criterion(out, priors, targets, lam)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
@@ -201,7 +205,7 @@ if __name__ == "__main__":
                 )
             )
             timer.clear()
-            wandb.log({'loss': loss.item()})
+            wandb.log({'loss': loss.item(), 'epoch': epoch})
 
     # model saving
     save_model(ema_model.ema, iteration, "Final")

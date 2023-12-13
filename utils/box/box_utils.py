@@ -119,7 +119,56 @@ def mutual_match(
     pred_t[idx] = best_truth_overlap        # loc_w
     loc_t[idx] = truths[best_truth_idx]
 
+@torch.no_grad()
+def iou2classif_match(
+    truths: torch.Tensor,
+    labels: torch.Tensor,
+    regress: torch.Tensor,
+    classif: torch.Tensor,
+    priors: torch.Tensor,
+    loc_t: torch.Tensor,
+    conf_t: torch.Tensor,
+    overlap_t: torch.Tensor,
+    pred_t: torch.Tensor,
+    idx: int,
+    lam: float,
+    topk: int = 15,
+    sigma: float = 2.0,
+) -> None:
+    """Classify to regress and regress to classify, Mutual Match for label assignement"""
 
+    ## for classification ###
+    qualities = jaccard(truths, decode(regress, priors))
+    qualities[qualities != qualities.max(dim=0, keepdim=True)[0]] = 0.0
+    for quality in qualities:
+        num_pos = max(1, torch.topk(quality, topk, largest=True)[0].sum().int())
+        num_pos = min(num_pos, (quality > 0).sum())
+        pos_mask = torch.topk(quality, num_pos, largest=True)[1]
+        quality[pos_mask] += 3.0
+    (best_truth_overlap, best_truth_idx) = qualities.max(dim=0)
+    overlap_t[idx] = best_truth_overlap     # cls_w
+    conf_t[idx] = labels[best_truth_idx]    # cls_t
+
+    # for regression ###
+    # qualities = (
+    #     jaccard(truths, point_form(priors))
+    #     * torch.exp(classif.sigmoid().t()[labels, :] / sigma)
+    # ).clamp_(max=1)
+    
+    iou = jaccard(truths, point_form(priors))    # IoU_anchor
+    confidence = classif.sigmoid().t()[labels,:]
+    qualities = (
+        (1 - lam)*iou + lam * confidence
+    ).clamp_(max=1)
+    qualities[qualities != qualities.max(dim=0, keepdim=True)[0]] = 0.0 # 최대 빼고 다 0
+    for quality in qualities:
+        num_pos = max(1, torch.topk(quality, topk, largest=True)[0].sum().int())
+        num_pos = min(num_pos, (quality > 0).sum())
+        pos_mask = torch.topk(quality, num_pos, largest=True)[1]
+        quality[pos_mask] += 3.0
+    (best_truth_overlap, best_truth_idx) = qualities.max(dim=0)
+    pred_t[idx] = best_truth_overlap        # loc_w
+    loc_t[idx] = truths[best_truth_idx]
 
 
 @torch.no_grad()

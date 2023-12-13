@@ -13,7 +13,7 @@ class SIOULoss(nn.Module):
         self.loss_weight = loss_weight
         self.eps = 1e-7
 
-    def __call__(self, box1, box2, weights):
+    def __call__(self, box1, box2, weights=None):
         """calculate iou. box1 and box2 are torch tensor with shape [M, 4] and [Nm 4]."""
         b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
         b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
