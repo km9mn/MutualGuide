@@ -25,21 +25,23 @@ from utils import (
     tencent_trick,
     adjust_learning_rate,
 )
+import wandb
 
 cudnn.benchmark = True
 
 ### For Reproducibility ###
-# import random
-# SEED = 0
-# random.seed(SEED)
-# np.random.seed(SEED)
-# torch.manual_seed(SEED)
-# torch.cuda.manual_seed_all(SEED)
-# torch.cuda.empty_cache()
-# cudnn.benchmark = False
-# cudnn.deterministic = True
-# cudnn.enabled = True
-### For Reproducibility ###
+import numpy as np
+import random
+SEED = 0
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.cuda.empty_cache()
+cudnn.benchmark = False
+cudnn.deterministic = True
+cudnn.enabled = True
+## For Reproducibility ###
 
 parser = argparse.ArgumentParser(description="Mutual Guide Training")
 parser.add_argument("--config", type=str)
@@ -62,7 +64,8 @@ def save_model(
             args.backbone,
             args.image_size,
             args.anchor_size,
-            "MG" if args.mutual_guide else "Retina",
+            # "MG" if args.mutual_guide else "Retina",
+            args.mutual_guide,
             suffix,
         ),
     )
@@ -77,7 +80,8 @@ def save_model(
 
 
 if __name__ == "__main__":
-    
+
+
     print("Extracting params...")
     with open(args.config, "r") as f:
         configs = yaml.safe_load(f)
@@ -85,6 +89,9 @@ if __name__ == "__main__":
             for key, value in config.items():
                 setattr(args, key, value)
     print(args)
+    wandb.init(project='detection', name=args.mutual_guide, entity='team_kyumin')
+
+
 
     print("Loading dataset...")
     if args.dataset == "COCO":
@@ -133,7 +140,8 @@ if __name__ == "__main__":
 
     print(
         "Training {}-{}-{} on {} with {} images".format(
-            "MG" if args.mutual_guide else "Retina",
+            # "MG" if args.mutual_guide else "Retina",
+            args.mutual_guide,
             args.neck,
             args.backbone,
             dataset.name,
@@ -141,9 +149,13 @@ if __name__ == "__main__":
         )
     )
     timer = Timer()
+    epoch = -1
     for iteration in range(start_iter, end_iter):
+        
         if iteration % epoch_size == 0:
-
+            epoch += 1
+            print('epoch:', epoch)
+            lam = epoch / args.max_epoch
             # save checkpoint
             save_model(ema_model.ema, iteration, "CKPT")
 
@@ -171,7 +183,7 @@ if __name__ == "__main__":
 
         with torch.cuda.amp.autocast():
             out = model(images)
-            loss = criterion(out, priors, targets)
+            loss = criterion(out, priors, targets, lam)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
@@ -193,6 +205,7 @@ if __name__ == "__main__":
                 )
             )
             timer.clear()
+            wandb.log({'loss': loss.item(), 'epoch': epoch})
 
     # model saving
     save_model(ema_model.ema, iteration, "Final")

@@ -10,7 +10,7 @@ training:
   lr: 0.01
   warm_iter: 500
   save_folder: "weights/"
-  mutual_guide: MG
+  mutual_guide: iou2classif_weighted
 
 distilling:
   kd: pdf

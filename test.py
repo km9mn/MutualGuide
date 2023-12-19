@@ -82,7 +82,8 @@ if __name__ == "__main__":
                 args.backbone,
                 args.image_size,
                 args.anchor_size,
-                "MG" if args.mutual_guide else "Retina",
+                # "MG" if args.mutual_guide else "Retina",
+                args.mutual_guide,
             ),
         )
     state_dict = torch.load(args.trained_model)
